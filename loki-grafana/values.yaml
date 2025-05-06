@@ -1,0 +1,152 @@
+global:
+  namespace: monitoring
+
+loki:
+  enabled: true
+  isDefault: false
+  persistence:
+    enabled: true
+    accessModes:
+      - ReadWriteOnce
+    size: 10Gi
+    storageClassName: standard
+  config:
+    auth_enabled: false
+    ingester:
+      lifecycler:
+        address: 0.0.0.0
+        ring:
+          kvstore:
+            store: inmemory
+          replication_factor: 1
+        final_sleep: 0s
+      chunk_idle_period: 5m
+      chunk_retain_period: 30s
+      max_transfer_retries: 0
+    limits_config:
+      enforce_metric_name: false
+      reject_old_samples: true
+      reject_old_samples_max_age: 168h
+    schema_config:
+      configs:
+        - from: 2020-10-24
+          store: boltdb-shipper
+          object_store: aws
+          schema: v11
+          index:
+            prefix: index_
+            period: 24h
+    server:
+      http_listen_port: 3100
+    storage_config:
+      aws:
+        s3: s3://us-east-1/loki
+        s3forcepathstyle: true
+      boltdb_shipper:
+        active_index_directory: /var/loki/boltdb-shipper-active
+        cache_location: /var/loki/boltdb-shipper-cache
+        cache_ttl: 24h
+        shared_store: s3
+    chunk_store_config:
+      max_look_back_period: 0
+    table_manager:
+      retention_deletes_enabled: false
+      retention_period: 0
+  service:
+    type: ClusterIP
+    port: 3100
+
+promtail:
+  enabled: true
+  config:
+    clients:
+      - url: http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push
+    snippets:
+      pipelineStages:
+        - docker: {}
+      common:
+        - action: labelmap
+          regex: __meta_kubernetes_pod_label_(.+)
+        - action: replace
+          source_labels:
+            - __meta_kubernetes_namespace
+          target_label: namespace
+        - action: replace
+          source_labels:
+            - __meta_kubernetes_pod_name
+          target_label: pod
+        - action: replace
+          source_labels:
+            - __meta_kubernetes_pod_container_name
+          target_label: container
+      scrapeConfigs:
+        - job_name: kubernetes-pods
+          kubernetes_sd_configs:
+            - role: pod
+          relabel_configs:
+            - source_labels: [__meta_kubernetes_pod_annotation_kubernetes_io_config_mirror]
+              action: drop
+              regex: true
+            - source_labels: [__meta_kubernetes_pod_label_name]
+              action: drop
+              regex: true
+            - action: labelmap
+              regex: __meta_kubernetes_pod_label_(.+)
+            - source_labels: [__meta_kubernetes_namespace]
+              action: replace
+              target_label: namespace
+            - source_labels: [__meta_kubernetes_pod_name]
+              action: replace
+              target_label: pod
+            - source_labels: [__meta_kubernetes_pod_container_name]
+              action: replace
+              target_label: container
+            - replacement: /var/log/pods/*$1/*.log
+              separator: /
+              source_labels:
+                - __meta_kubernetes_pod_uid
+                - __meta_kubernetes_pod_container_name
+              target_label: __path__
+            - replacement: /var/log/pods/*$1/*.log
+              separator: /
+              source_labels:
+                - __meta_kubernetes_pod_annotation_kubernetes_io_config_mirror
+                - __meta_kubernetes_pod_container_name
+              target_label: __path__
+
+grafana:
+  enabled: true
+  adminPassword: admin
+  persistence:
+    enabled: true
+    storageClassName: standard
+    accessModes:
+      - ReadWriteOnce
+    size: 1Gi
+  datasources:
+    datasources.yaml:
+      apiVersion: 1
+      datasources:
+        - name: Loki
+          type: loki
+          url: http://loki.monitoring.svc.cluster.local:3100
+          access: proxy
+          isDefault: true
+  dashboardProviders:
+    dashboardproviders.yaml:
+      apiVersion: 1
+      providers:
+        - name: 'default'
+          orgId: 1
+          folder: ''
+          type: file
+          disableDeletion: false
+          editable: true
+          options:
+            path: /var/lib/grafana/dashboards/default
+  dashboards:
+    default:
+      loki-overview:
+        gnetId: 12559
+        revision: 2
+        datasource: Loki

@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  labels:
+    {{- include "loki-stack.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "loki-stack.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "loki-stack.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: grafana
+          image: grafana/grafana:{{ .Values.grafana.image.tag | default "9.5.3" }}
+          ports:
+            - containerPort: 3000
+              name: http
+          volumeMounts:
+            - name: storage
+              mountPath: /var/lib/grafana
+            - name: config
+              mountPath: /etc/grafana/provisioning/datasources
+              readOnly: true
+          resources:
+            limits:
+              cpu: 500m
+              memory: 1Gi
+            requests:
+              cpu: 100m
+              memory: 256Mi
+          env:
+            - name: GF_SECURITY_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: grafana
+                  key: admin-password
+      volumes:
+        - name: storage
+          persistentVolumeClaim:
+            claimName: grafana-pvc
+        - name: config
+          configMap:
+            name: grafana-datasource

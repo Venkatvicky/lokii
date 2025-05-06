@@ -1,0 +1,58 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: loki-ingester
+  labels:
+    {{- include "loki-stack.labels" . | nindent 4 }}
+    component: ingester
+spec:
+  replicas: 2
+  serviceName: loki-ingester
+  selector:
+    matchLabels:
+      {{- include "loki-stack.selectorLabels" . | nindent 6 }}
+      component: ingester
+  template:
+    metadata:
+      labels:
+        {{- include "loki-stack.selectorLabels" . | nindent 8 }}
+        component: ingester
+    spec:
+      containers:
+        - name: ingester
+          image: grafana/loki:{{ .Values.loki.image.tag | default "2.9.1" }}
+          args:
+            - "-target=ingester"
+            - "-config.file=/etc/loki/loki.yaml"
+          ports:
+            - containerPort: 3100
+              name: http
+            - containerPort: 9095
+              name: grpc
+          volumeMounts:
+            - name: config
+              mountPath: /etc/loki
+            - name: storage
+              mountPath: /var/loki
+          resources:
+            limits:
+              cpu: 1000m
+              memory: 2Gi
+            requests:
+              cpu: 500m
+              memory: 1Gi
+      volumes:
+        - name: config
+          configMap:
+            name: loki-config
+  volumeClaimTemplates:
+    - metadata:
+        name: storage
+      spec:
+        accessModes: [ "ReadWriteOnce" ]
+        resources:
+          requests:
+            storage: {{ .Values.loki.persistence.size | default "10Gi" }}
+        {{- if .Values.loki.persistence.storageClassName }}
+        storageClassName: {{ .Values.loki.persistence.storageClassName }}
+        {{- end }}

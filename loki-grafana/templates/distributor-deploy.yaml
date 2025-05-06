@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: loki-distributor
+  labels:
+    {{- include "loki-stack.labels" . | nindent 4 }}
+    component: distributor
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      {{- include "loki-stack.selectorLabels" . | nindent 6 }}
+      component: distributor
+  template:
+    metadata:
+      labels:
+        {{- include "loki-stack.selectorLabels" . | nindent 8 }}
+        component: distributor
+    spec:
+      containers:
+        - name: distributor
+          image: grafana/loki:{{ .Values.loki.image.tag | default "2.9.1" }}
+          args:
+            - "-target=distributor"
+            - "-config.file=/etc/loki/loki.yaml"
+          ports:
+            - containerPort: 3100
+              name: http
+            - containerPort: 9095
+              name: grpc
+          volumeMounts:
+            - name: config
+              mountPath: /etc/loki
+          resources:
+            limits:
+              cpu: 500m
+              memory: 512Mi
+            requests:
+              cpu: 100m
+              memory: 128Mi
+      volumes:
+        - name: config
+          configMap:
+            name: loki-config
